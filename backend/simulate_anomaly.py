@@ -78,7 +78,7 @@ def generate_realistic_anomaly_data(scenario_config, base_time=None, fast_mode=F
     
     Args:
         scenario_config: Configuration dictionary for scenario
-        base_time: Base timestamp (defaults to now)
+        base_time: Base timestamp (defaults to now MINUS duration to end at current time)
         fast_mode: If True, inserts data quickly without real-time delays
     
     Returns:
@@ -86,7 +86,10 @@ def generate_realistic_anomaly_data(scenario_config, base_time=None, fast_mode=F
     """
     
     if base_time is None:
-        base_time = datetime.utcnow()
+        # Set base time so that the LAST signal is at current time
+        # This ensures data is within the EWS lookback window
+        now = datetime.utcnow()
+        base_time = now - timedelta(minutes=scenario_config['duration'])
     
     documents = []
     duration = scenario_config['duration']

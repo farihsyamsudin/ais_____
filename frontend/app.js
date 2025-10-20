@@ -252,12 +252,24 @@ function displayAnomaliesOnMap(confirmed, candidates) {
 
 function initializeMap() {
     // Initialize Leaflet map centered on Selat Sunda
-    map = L.map('map').setView([-6.0, 105.5], 9);
+    map = L.map('map', {
+        center: [-6.0, 105.5],
+        zoom: 9,
+        zoomControl: true,
+        scrollWheelZoom: true
+    });
     
+    // Add OpenStreetMap tiles with error handling
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
+        maxZoom: 19,
+        minZoom: 7
     }).addTo(map);
+    
+    // Force map to invalidate size after a short delay
+    setTimeout(() => {
+        map.invalidateSize();
+    }, 100);
     
     // Add port markers
     const ports = [
