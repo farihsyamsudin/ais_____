@@ -3,262 +3,224 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIS Transhipment Detection System</title>
+    <title>AIS Transhipment Detection — Batam/Singapore</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
-          crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-            crossorigin=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <style>
-        /* Fix Leaflet CSS conflicts */
-        #map { 
-            height: 500px; 
-            width: 100%; 
-            border-radius: 0.5rem; 
+        #map {
+            height: 540px;
+            width: 100%;
+            border-radius: 0.5rem;
             z-index: 1;
         }
-        
-        /* Ensure Leaflet images load correctly */
-        .leaflet-container {
-            height: 100%;
-            width: 100%;
-        }
-        
-        .leaflet-tile-container img {
-            max-width: none !important;
-        }
+        .leaflet-container { height: 100%; width: 100%; }
+        .leaflet-tile-container img { max-width: none !important; }
+
         .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3b82f6;
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #2563eb;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 40px; height: 40px;
             animation: spin 1s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
         .status-dot {
-            height: 12px;
-            width: 12px;
+            height: 10px; width: 10px;
             border-radius: 50%;
             display: inline-block;
             margin-right: 8px;
+            flex-shrink: 0;
         }
-        .status-healthy { background-color: #10b981; }
+        .status-healthy   { background-color: #10b981; box-shadow: 0 0 6px #10b981; }
         .status-unhealthy { background-color: #ef4444; }
     </style>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-100 text-gray-800">
+
     <!-- Header -->
-    <nav class="bg-blue-600 text-white shadow-lg">
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
         <div class="container mx-auto px-4 py-4">
             <div class="flex items-center justify-between">
                 <div class="flex items-center space-x-3">
-                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path>
-                    </svg>
-                    <h1 class="text-2xl font-bold">AIS Transhipment Detection</h1>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <div id="statusIndicator" class="flex items-center">
-                        <span class="status-dot status-unhealthy"></span>
-                        <span class="text-sm">Checking...</span>
+                    <span class="text-2xl">&#x1F6A2;</span>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-800">AIS Transhipment Detection</h1>
+                        <p class="text-xs text-gray-500">Batam &middot; Singapore &middot; Johor Strait</p>
                     </div>
+                </div>
+                <div id="statusIndicator" class="flex items-center bg-gray-100 border border-gray-200 px-4 py-2 rounded-full text-sm">
+                    <span class="status-dot status-unhealthy"></span>
+                    <span class="text-gray-600">Connecting...</span>
                 </div>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <div class="container mx-auto px-4 py-8">
-        
+    <div class="container mx-auto px-4 py-6">
+
         <!-- Stats Cards -->
-        <div id="statsSection" class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm">Total Signals</p>
-                        <p id="totalSignals" class="text-2xl font-bold text-gray-800">-</p>
-                    </div>
-                    <div class="bg-blue-100 p-3 rounded-full">
-                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                    </div>
-                </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                <p class="text-gray-500 text-xs mb-1">Total Signals</p>
+                <p id="totalSignals" class="text-2xl font-bold text-blue-600">&#8212;</p>
             </div>
-
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm">Unique Vessels</p>
-                        <p id="uniqueVessels" class="text-2xl font-bold text-gray-800">-</p>
-                    </div>
-                    <div class="bg-green-100 p-3 rounded-full">
-                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path>
-                        </svg>
-                    </div>
-                </div>
+            <div class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                <p class="text-gray-500 text-xs mb-1">Unique Vessels</p>
+                <p id="uniqueVessels" class="text-2xl font-bold text-blue-600">&#8212;</p>
             </div>
-
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm">Confirmed Anomalies</p>
-                        <p id="confirmedCount" class="text-2xl font-bold text-red-600">-</p>
-                    </div>
-                    <div class="bg-red-100 p-3 rounded-full">
-                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                        </svg>
-                    </div>
-                </div>
+            <div class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                <p class="text-gray-500 text-xs mb-1">Confirmed Anomalies</p>
+                <p id="confirmedCount" class="text-2xl font-bold text-red-500">&#8212;</p>
             </div>
-
-            <div class="bg-white rounded-lg shadow p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-gray-500 text-sm">Candidate Anomalies</p>
-                        <p id="candidateCount" class="text-2xl font-bold text-yellow-600">-</p>
-                    </div>
-                    <div class="bg-yellow-100 p-3 rounded-full">
-                        <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </div>
-                </div>
+            <div class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                <p class="text-gray-500 text-xs mb-1">Candidates</p>
+                <p id="candidateCount" class="text-2xl font-bold text-yellow-500">&#8212;</p>
             </div>
         </div>
 
         <!-- Detection Controls -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-xl font-bold text-gray-800 mb-4">Detection Parameters</h2>
-            
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 mb-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">Detection Parameters</h2>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Date Range -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Start Date & Time</label>
-                    <input type="datetime-local" id="startDate" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">End Date & Time</label>
-                    <input type="datetime-local" id="endDate" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                </div>
 
-                <!-- Parameters -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Proximity Threshold (km): <span id="proximityValue" class="text-blue-600">0.2</span>
-                    </label>
-                    <input type="range" id="proximityThreshold" min="0.1" max="1.0" step="0.1" value="0.2" class="w-full">
+                    <label class="block text-sm text-gray-500 mb-1">Start Date &amp; Time (UTC)</label>
+                    <input type="datetime-local" id="startDate"
+                           class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-500 mb-1">End Date &amp; Time (UTC)</label>
+                    <input type="datetime-local" id="endDate"
+                           class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Duration Threshold (min): <span id="durationValue" class="text-blue-600">30</span>
+                    <label class="block text-sm text-gray-500 mb-1">
+                        Proximity Threshold (km): <span id="proximityValue" class="text-blue-600 font-bold">0.5</span>
                     </label>
-                    <input type="range" id="durationThreshold" min="10" max="60" step="5" value="30" class="w-full">
+                    <input type="range" id="proximityThreshold" min="0.1" max="2.0" step="0.1" value="0.5" class="w-full accent-blue-600">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1"><span>0.1 km</span><span>2.0 km</span></div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        SOG Threshold (knots): <span id="sogValue" class="text-blue-600">0.5</span>
+                    <label class="block text-sm text-gray-500 mb-1">
+                        Min Duration &mdash; Confirmed (min): <span id="durationValue" class="text-blue-600 font-bold">30</span>
                     </label>
-                    <input type="range" id="sogThreshold" min="0.1" max="2.0" step="0.1" value="0.5" class="w-full">
+                    <input type="range" id="durationThreshold" min="10" max="120" step="5" value="30" class="w-full accent-blue-600">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1"><span>10 min</span><span>120 min</span></div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Port Distance (km): <span id="portDistValue" class="text-blue-600">10.0</span>
+                    <label class="block text-sm text-gray-500 mb-1">
+                        SOG Threshold (knots): <span id="sogValue" class="text-blue-600 font-bold">2.0</span>
                     </label>
-                    <input type="range" id="portDistance" min="5" max="20" step="1" value="10" class="w-full">
+                    <input type="range" id="sogThreshold" min="0.1" max="5.0" step="0.1" value="2.0" class="w-full accent-blue-600">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1"><span>0.1 kn</span><span>5.0 kn</span></div>
                 </div>
+
+                <div>
+                    <label class="block text-sm text-gray-500 mb-1">
+                        Port Exclusion Radius (km): <span id="portDistValue" class="text-blue-600 font-bold">0.5</span>
+                    </label>
+                    <input type="range" id="portDistance" min="0.1" max="5.0" step="0.1" value="0.5" class="w-full accent-blue-600">
+                    <div class="flex justify-between text-xs text-gray-400 mt-1"><span>0.1 km</span><span>5.0 km</span></div>
+                </div>
+
             </div>
 
-            <div class="mt-6 flex space-x-4">
-                <button id="detectBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center">
+            <div class="mt-6 flex space-x-3">
+                <button id="detectBtn"
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
                     Run Detection
                 </button>
-                <button id="resetBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-6 rounded-lg transition duration-200">
+                <button id="resetBtn"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-lg transition duration-200 border border-gray-300">
                     Reset
                 </button>
             </div>
 
-            <!-- Loading State -->
-            <div id="loadingState" class="hidden mt-6 flex items-center justify-center">
-                <div class="loader mr-4"></div>
-                <span class="text-gray-600">Analyzing AIS data...</span>
+            <div id="loadingState" class="hidden mt-6 flex items-center justify-center space-x-4">
+                <div class="loader"></div>
+                <div class="text-gray-500">
+                    <p class="font-medium">Analyzing AIS data...</p>
+                    <p class="text-xs">This may take a minute for large date ranges</p>
+                </div>
             </div>
         </div>
 
-        <!-- Results Section -->
-        <div id="resultsSection" class="hidden">
-            <!-- Map -->
-            <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Anomaly Locations Map</h2>
-                <div id="map"></div>
+        <!-- Map -->
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-gray-800">Anomaly Locations</h2>
+                <div class="flex items-center space-x-4 text-xs text-gray-500">
+                    <span><span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span>Confirmed</span>
+                    <span><span class="inline-block w-3 h-3 rounded-full bg-yellow-400 mr-1"></span>Candidate</span>
+                    <span><span class="inline-block w-3 h-3 rounded-full bg-blue-500 mr-1"></span>Port</span>
+                </div>
             </div>
+            <div id="map"></div>
+        </div>
 
-            <!-- Tables -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <!-- Confirmed Anomalies -->
-                <div class="bg-white rounded-lg shadow-lg p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                        <span class="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded mr-2">
-                            Confirmed
-                        </span>
+        <!-- Results Tables -->
+        <div id="resultsSection" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+                <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <span class="bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded mr-2">Confirmed</span>
                         Detected Anomalies
                     </h2>
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MMSI Pair</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-gray-500 border-b border-gray-200">
+                                    <th class="px-3 py-2 text-left">MMSI Pair</th>
+                                    <th class="px-3 py-2 text-left">Duration</th>
+                                    <th class="px-3 py-2 text-left">Start Time</th>
+                                    <th class="px-3 py-2 text-left">Location</th>
                                 </tr>
                             </thead>
-                            <tbody id="confirmedTable" class="bg-white divide-y divide-gray-200">
+                            <tbody id="confirmedTable" class="divide-y divide-gray-100">
+                                <tr><td colspan="4" class="px-3 py-3 text-center text-gray-400">No confirmed anomalies detected</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Candidate Anomalies -->
-                <div class="bg-white rounded-lg shadow-lg p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                        <span class="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2.5 py-0.5 rounded mr-2">
-                            Candidate
-                        </span>
-                        Potential Anomalies
+                <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <span class="bg-yellow-100 text-yellow-600 text-xs font-semibold px-2 py-0.5 rounded mr-2">Candidate</span>
+                        Near-Threshold Events
                     </h2>
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MMSI Pair</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-gray-500 border-b border-gray-200">
+                                    <th class="px-3 py-2 text-left">MMSI Pair</th>
+                                    <th class="px-3 py-2 text-left">Duration</th>
+                                    <th class="px-3 py-2 text-left">Start Time</th>
+                                    <th class="px-3 py-2 text-left">Location</th>
                                 </tr>
                             </thead>
-                            <tbody id="candidateTable" class="bg-white divide-y divide-gray-200">
+                            <tbody id="candidateTable" class="divide-y divide-gray-100">
+                                <tr><td colspan="4" class="px-3 py-3 text-center text-gray-400">No candidate anomalies detected</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
+
             </div>
         </div>
+
     </div>
 
     <script src="app.js"></script>
