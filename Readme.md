@@ -426,6 +426,78 @@ COPY backend/ .
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
 ```
 
+## 🚀 Production Deployment
+
+### Using Gunicorn
+
+```bash
+cd backend
+
+# Install gunicorn (already in requirements.txt)
+pip install gunicorn
+
+# Run with gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
+```
+
+### Using Docker (Optional)
+
+```dockerfile
+# Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY backend/ .
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+```
+
+## 🐳 Running with Docker
+
+This project can be run using Docker and Docker Compose, which simplifies setup and deployment.
+
+### Prerequisites
+
+-   **Docker**
+-   **Docker Compose**
+
+### Steps
+
+1.  **Build and Run Services**:
+    Navigate to the root directory of the project (where `docker-compose.yml` is located) and run:
+    ```bash
+    docker-compose up --build
+    ```
+    This command will:
+    -   Build the `backend` service image using the `Dockerfile` in the `backend/` directory.
+    -   Pull the `mongo:7.0` image for the `mongodb` service.
+    -   Pull the `nginx:alpine` image for the `frontend` service.
+    -   Start all three services: `mongodb`, `backend`, and `frontend`.
+
+2.  **Access the Application**:
+    -   **Frontend**: Open your web browser and go to `http://localhost:8000`.
+    -   **Backend API**: The API will be accessible at `http://localhost:5000`.
+
+3.  **Seed Database (Optional)**:
+    If you need to seed the database with test data, you can do so by running the `seed_database.py` script.
+    First, find the container ID or name of your backend service:
+    ```bash
+    docker-compose ps
+    ```
+    Then, execute the seeder script inside the backend container:
+    ```bash
+    docker-compose exec backend python seed_database.py
+    ```
+    When prompted, choose option `1` for test scenarios.
+
+4.  **Stop Services**:
+    To stop and remove the running Docker containers, networks, and volumes, press `Ctrl+C` in the terminal where `docker-compose up` is running, or open a new terminal in the project root and run:
+    ```bash
+    docker-compose down
+    ```
+
 ## 📈 Performance Tips
 
 1. **Database Indexing**: Already configured in seeder

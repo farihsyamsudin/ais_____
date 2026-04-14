@@ -1,0 +1,15 @@
+dont fetch all shibal
+
+127.0.0.1 - - [23/Feb/2026 10:10:27] "OPTIONS /api/detect HTTP/1.1" 200 -
+[API] Fetching data 2025-08-01 03:00:00+00:00 → 2025-12-31 15:00:00+00:00...
+127.0.0.1 - - [23/Feb/2026 10:10:31] "GET /api/stats HTTP/1.1" 200 -
+127.0.0.1 - - [23/Feb/2026 10:11:02] "GET /api/stats HTTP/1.1" 200 -
+127.0.0.1 - - [23/Feb/2026 10:11:38] "GET /api/stats HTTP/1.1" 200 -
+[API] Data fetched: 533232 records
+[API] Running anomaly detection...
+   [Logic] Downsampling data per menit per kapal...
+   [Logic] Data siap diproses: 494811 titik data.
+   [Logic] Memindai kedekatan kapal pada 106953 timestamp...
+      ... Progress scan: 0%
+127.0.0.1 - - [23/Feb/2026 10:12:03] "GET /api/stats HTTP/1.1" 200 -
+      ... Progress scan: 19%

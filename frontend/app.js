@@ -1,7 +1,7 @@
 // ==============================
 // Configuration
 // ==============================
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'http://localhost:5020';
 
 // Default params — harus sinkron dengan backend/app.py DEFAULT_PARAMS
 const DEFAULT_PARAMS = {

@@ -181,51 +181,92 @@ def health_check():
     try:
         db = get_db()
         db.command('ping')
-        count = db[COLLECTION_NAME].count_documents({})
+        
+        # Quick count pakai estimated (tidak block)
+        collection = db[COLLECTION_NAME]
+        total = collection.estimated_document_count()
+        
         return jsonify({
             "status": "healthy",
             "database": "connected",
-            "collection": COLLECTION_NAME,
-            "document_count": count,
-            "timestamp": datetime.utcnow().isoformat()
+            "total_signals": total,
+            "timestamp": datetime.now().isoformat()
         }), 200
     except Exception as e:
         return jsonify({
             "status": "unhealthy",
             "database": "disconnected",
-            "error": str(e)
-        }), 503
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Returns database statistics"""
     try:
         db = get_db()
         collection = db[COLLECTION_NAME]
+        
+        # ✅ Instant - baca metadata doang
+        total_signals = collection.estimated_document_count()
+        
+        # ✅ Pakai index created_at - ambil 1 doc terlama & terbaru aja
+        oldest = collection.find_one({}, {"created_at": 1}, sort=[("created_at", 1)])
+        newest = collection.find_one({}, {"created_at": 1}, sort=[("created_at", -1)])
+        
+        date_range = {}
+        if oldest and newest:
+            date_range = {
+                "min": oldest["created_at"].isoformat(),
+                "max": newest["created_at"].isoformat()
+            }
+        
+        return jsonify({
+            "total_signals": total_signals,
+            "unique_vessels": "N/A",
+            "date_range": date_range
+        }), 200
 
-        total_docs = collection.count_documents({})
-        unique_vessels = len(collection.distinct('immsi'))
-
-        date_range = list(collection.aggregate([
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    """Returns database statistics - OPTIMIZED for large collections"""
+    try:
+        db = get_db()
+        collection = db[COLLECTION_NAME]
+        
+        # ✅ estimated_document_count = O(1), baca metadata aja, bukan scan
+        total_signals = collection.estimated_document_count()
+        
+        # ✅ Pakai aggregate dengan approx count, bukan distinct() yang load semua ke memory
+        vessel_count_agg = list(collection.aggregate([
+            {"$sample": {"size": 50000}},  # sample 50k dokumen
+            {"$group": {"_id": "$mmsi"}},
+            {"$count": "total"}
+        ]))
+        unique_vessels_approx = vessel_count_agg[0]["total"] if vessel_count_agg else 0
+        
+        # ✅ Date range pakai index (pastikan index created_at sudah ada)
+        date_agg = list(collection.aggregate([
             {"$group": {
                 "_id": None,
                 "min_date": {"$min": "$created_at"},
                 "max_date": {"$max": "$created_at"}
             }}
         ]))
-
-        stats = {
-            "total_signals": total_docs,
-            "unique_vessels": unique_vessels,
-            "date_range": {
-                "start": date_range[0]['min_date'].isoformat() if date_range else None,
-                "end": date_range[0]['max_date'].isoformat() if date_range else None
+        
+        date_range = {}
+        if date_agg:
+            date_range = {
+                "min": date_agg[0]['min_date'].isoformat(),
+                "max": date_agg[0]['max_date'].isoformat()
             }
-        }
-
-        return jsonify(stats), 200
-
+        
+        return jsonify({
+            "total_signals": total_signals,
+            "unique_vessels": unique_vessels,
+            "date_range": date_range
+        }), 200
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
