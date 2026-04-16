@@ -81,9 +81,9 @@ DEFAULT_PARAMS = {
     "proximity_km": 0.5,
     "duration_min": 30,
     "candidate_duration_min": 15,
-    "sog_threshold": 2.0,
-    "port_distance_km": 0.5,
-    "time_gap_min": 10
+    "sog_threshold": 1.5,
+    "port_distance_km": 10,
+    "time_gap_min": 30
 }
 
 # ==============================

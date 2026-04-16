@@ -1,21 +1,21 @@
 // ==============================
 // Configuration
 // ==============================
-const API_BASE_URL = 'http://localhost:5020';
+const API_BASE_URL = 'http://localhost:5000';
 
 // Default params — harus sinkron dengan backend/app.py DEFAULT_PARAMS
 const DEFAULT_PARAMS = {
     proximity_km:           0.5,
     duration_min:           30,
-    candidate_duration_min: 15,
-    sog_threshold:          2.0,
-    port_distance_km:       0.5,
-    time_gap_min:           10
+    candidate_duration_min: 20, // Diperbarui dari 15 ke 20
+    sog_threshold:          1.5, // Diperbarui dari 2.0 ke 1.5
+    port_distance_km:       10.0, // Diperbarui dari 0.5 ke 10.0
+    time_gap_min:           30  // Diperbarui dari 10 ke 30
 };
 
 // Default date range — sinkron dengan seed_database.py test scenarios
-const DEFAULT_START = '2024-01-01T10:00';
-const DEFAULT_END   = '2024-01-01T22:00';
+const DEFAULT_START = '2025-06-01T00:00'; // 1 Juni 2025, jam 00:00
+const DEFAULT_END   = '2026-12-31T23:59'; // 31 Desember 2026, jam 23:59
 
 // Ports Batam/SG/Johor — sinkron dengan V4/main.py + backend/app.py
 const PORTS = [
