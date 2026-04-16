@@ -105,6 +105,10 @@ async function loadStats() {
     }
 }
 
+// ==============================
+// MODIFIED: runDetection — now uses background job + polling
+// ==============================
+
 async function runDetection() {
     const startDate = document.getElementById('startDate').value;
     const endDate   = document.getElementById('endDate').value;
@@ -123,11 +127,14 @@ async function runDetection() {
         time_gap_min:           DEFAULT_PARAMS.time_gap_min
     };
 
+    // Show loading, disable button
     document.getElementById('loadingState').classList.remove('hidden');
     document.getElementById('detectBtn').disabled = true;
+    setLoadingMessage('Submitting job...');
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/detect`, {
+        // Step 1: POST to /api/detect — returns immediately with job_id
+        const submitResponse = await fetch(`${API_BASE_URL}/api/detect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -137,13 +144,19 @@ async function runDetection() {
             })
         });
 
-        const data = await response.json();
+        const submitData = await submitResponse.json();
 
-        if (response.ok) {
-            displayResults(data);
-        } else {
-            alert(`Error: ${data.error}`);
+        if (!submitResponse.ok) {
+            alert(`Error: ${submitData.error}`);
+            return;
         }
+
+        const jobId = submitData.job_id;
+        console.log(`[Detection] Job started: ${jobId}`);
+
+        // Step 2: Poll /api/job/<job_id> until done or error
+        await pollJob(jobId);
+
     } catch (error) {
         console.error('Detection failed:', error);
         alert('Detection failed. Is the backend running on port 5000?');
@@ -151,6 +164,57 @@ async function runDetection() {
         document.getElementById('loadingState').classList.add('hidden');
         document.getElementById('detectBtn').disabled = false;
     }
+}
+
+/**
+ * Polls GET /api/job/<jobId> every 3 seconds until status is "done" or "error".
+ * Updates the loading message with live progress text from the backend.
+ */
+async function pollJob(jobId) {
+    const POLL_INTERVAL_MS = 3000;
+
+    while (true) {
+        await sleep(POLL_INTERVAL_MS);
+
+        let pollData;
+        try {
+            const pollResponse = await fetch(`${API_BASE_URL}/api/job/${jobId}`);
+            pollData = await pollResponse.json();
+
+            if (!pollResponse.ok) {
+                alert(`Job error: ${pollData.error}`);
+                return;
+            }
+        } catch (err) {
+            console.error('[Poll] Network error:', err);
+            alert('Lost connection while polling job status.');
+            return;
+        }
+
+        console.log(`[Poll] Job ${jobId} — status: ${pollData.status}, progress: ${pollData.progress}`);
+
+        if (pollData.status === 'running') {
+            setLoadingMessage(pollData.progress || 'Analyzing AIS data...');
+            // Continue loop
+        } else if (pollData.status === 'done') {
+            displayResults(pollData.result);
+            return;
+        } else if (pollData.status === 'error') {
+            alert(`Detection failed: ${pollData.error}`);
+            return;
+        }
+    }
+}
+
+/** Updates the loading message text visible to the user */
+function setLoadingMessage(msg) {
+    const el = document.querySelector('#loadingState p.font-medium');
+    if (el) el.textContent = msg;
+}
+
+/** Promise-based sleep helper */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ==============================

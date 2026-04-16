@@ -13,6 +13,12 @@ from anomaly_logic import detect_anomalies
 import os
 from dotenv import load_dotenv
 
+# ==============================
+# NEW: Background job imports
+# ==============================
+import threading
+import uuid
+
 load_dotenv()
 
 # ==============================
@@ -79,6 +85,18 @@ DEFAULT_PARAMS = {
     "port_distance_km": 0.5,
     "time_gap_min": 10
 }
+
+# ==============================
+# NEW: In-memory job store
+# ==============================
+# Structure: { job_id: { "status": "pending"|"running"|"done"|"error",
+#                        "progress": str,
+#                        "result": dict|None,
+#                        "error": str|None,
+#                        "created_at": datetime } }
+jobs = {}
+jobs_lock = threading.Lock()
+
 
 # ==============================
 # Database Connection
@@ -172,6 +190,83 @@ def format_anomaly_response(final_df, candidate_df):
 
 
 # ==============================
+# NEW: Background worker
+# ==============================
+
+def run_detection_job(job_id, start_date, end_date, proximity_km, duration_min,
+                      candidate_duration_min, sog_threshold, port_distance_km,
+                      time_gap_min, mmsi_filter):
+    """
+    Runs inside a daemon thread. Updates jobs[job_id] in-place.
+    Detection logic is UNCHANGED — only wrapping changed.
+    """
+    def set_progress(msg):
+        with jobs_lock:
+            jobs[job_id]["progress"] = msg
+
+    try:
+        set_progress("Fetching AIS data from database...")
+        print(f"[JOB {job_id}] Fetching data {start_date} → {end_date}...")
+        df = fetch_ais_data(start_date, end_date, mmsi_filter)
+
+        if df.empty:
+            with jobs_lock:
+                jobs[job_id].update({
+                    "status": "done",
+                    "progress": "Complete",
+                    "result": {
+                        "message": "No data found for the specified date range",
+                        "confirmed_anomalies": [],
+                        "candidate_anomalies": [],
+                        "data_points": 0
+                    }
+                })
+            return
+
+        set_progress(f"Analysing {len(df):,} AIS records...")
+        print(f"[JOB {job_id}] Data fetched: {len(df)} records")
+
+        # ── Detection logic — NOT CHANGED ──────────────────────────────────
+        print(f"[JOB {job_id}] Running anomaly detection...")
+        final_df, candidate_df = detect_anomalies(
+            df, proximity_km, duration_min, candidate_duration_min,
+            sog_threshold, port_distance_km, time_gap_min, PORTS
+        )
+        # ───────────────────────────────────────────────────────────────────
+
+        confirmed, candidates = format_anomaly_response(final_df, candidate_df)
+
+        with jobs_lock:
+            jobs[job_id].update({
+                "status": "done",
+                "progress": "Complete",
+                "result": {
+                    "confirmed_anomalies": confirmed,
+                    "candidate_anomalies": candidates,
+                    "data_points": len(df),
+                    "summary": {
+                        "confirmed_count": len(confirmed),
+                        "candidate_count": len(candidates),
+                        "date_range": {
+                            "start": start_date.isoformat(),
+                            "end": end_date.isoformat()
+                        }
+                    }
+                }
+            })
+        print(f"[JOB {job_id}] Done — {len(confirmed)} confirmed, {len(candidates)} candidates")
+
+    except Exception as e:
+        print(f"[JOB {job_id}] Error: {e}")
+        with jobs_lock:
+            jobs[job_id].update({
+                "status": "error",
+                "progress": "Failed",
+                "error": str(e)
+            })
+
+
+# ==============================
 # API Routes
 # ==============================
 
@@ -229,46 +324,6 @@ def get_stats():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    """Returns database statistics - OPTIMIZED for large collections"""
-    try:
-        db = get_db()
-        collection = db[COLLECTION_NAME]
-        
-        # ✅ estimated_document_count = O(1), baca metadata aja, bukan scan
-        total_signals = collection.estimated_document_count()
-        
-        # ✅ Pakai aggregate dengan approx count, bukan distinct() yang load semua ke memory
-        vessel_count_agg = list(collection.aggregate([
-            {"$sample": {"size": 50000}},  # sample 50k dokumen
-            {"$group": {"_id": "$mmsi"}},
-            {"$count": "total"}
-        ]))
-        unique_vessels_approx = vessel_count_agg[0]["total"] if vessel_count_agg else 0
-        
-        # ✅ Date range pakai index (pastikan index created_at sudah ada)
-        date_agg = list(collection.aggregate([
-            {"$group": {
-                "_id": None,
-                "min_date": {"$min": "$created_at"},
-                "max_date": {"$max": "$created_at"}
-            }}
-        ]))
-        
-        date_range = {}
-        if date_agg:
-            date_range = {
-                "min": date_agg[0]['min_date'].isoformat(),
-                "max": date_agg[0]['max_date'].isoformat()
-            }
-        
-        return jsonify({
-            "total_signals": total_signals,
-            "unique_vessels": unique_vessels,
-            "date_range": date_range
-        }), 200
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/vessels', methods=['GET'])
@@ -312,21 +367,21 @@ def get_vessels():
         return jsonify({"error": str(e)}), 500
 
 
+# ==============================
+# MODIFIED: /api/detect — now async
+# ==============================
+
 @app.route('/api/detect', methods=['POST'])
 def detect():
     """
-    Runs anomaly detection on specified date range.
-    Body:
+    Kicks off anomaly detection as a background job.
+    Returns job_id immediately so Cloudflare never times out.
+
+    Body: same as before — no breaking changes.
+    Response:
     {
-        "start_date": "2024-01-01T00:00:00",
-        "end_date":   "2024-01-02T00:00:00",
-        "parameters": {
-            "proximity_km": 0.5,
-            "duration_min": 30,
-            "sog_threshold": 2.0,
-            "port_distance_km": 0.5
-        },
-        "mmsi_filter": [525101059, 525101060]  // optional
+        "job_id": "<uuid>",
+        "status": "pending"
     }
     """
     try:
@@ -338,57 +393,82 @@ def detect():
 
         # Get parameters (use defaults if not provided)
         params = data.get('parameters', {})
-        proximity_km          = float(params.get('proximity_km',          DEFAULT_PARAMS['proximity_km']))
-        duration_min          = float(params.get('duration_min',          DEFAULT_PARAMS['duration_min']))
+        proximity_km           = float(params.get('proximity_km',           DEFAULT_PARAMS['proximity_km']))
+        duration_min           = float(params.get('duration_min',           DEFAULT_PARAMS['duration_min']))
         candidate_duration_min = float(params.get('candidate_duration_min', DEFAULT_PARAMS['candidate_duration_min']))
-        sog_threshold         = float(params.get('sog_threshold',         DEFAULT_PARAMS['sog_threshold']))
-        port_distance_km      = float(params.get('port_distance_km',      DEFAULT_PARAMS['port_distance_km']))
-        time_gap_min          = float(params.get('time_gap_min',          DEFAULT_PARAMS['time_gap_min']))
+        sog_threshold          = float(params.get('sog_threshold',          DEFAULT_PARAMS['sog_threshold']))
+        port_distance_km       = float(params.get('port_distance_km',       DEFAULT_PARAMS['port_distance_km']))
+        time_gap_min           = float(params.get('time_gap_min',           DEFAULT_PARAMS['time_gap_min']))
 
         mmsi_filter = data.get('mmsi_filter')
 
-        # Fetch data from MongoDB
-        print(f"[API] Fetching data {start_date} → {end_date}...")
-        df = fetch_ais_data(start_date, end_date, mmsi_filter)
-
-        if df.empty:
-            return jsonify({
-                "message": "No data found for the specified date range",
-                "confirmed_anomalies": [],
-                "candidate_anomalies": [],
-                "data_points": 0
-            }), 200
-
-        print(f"[API] Data fetched: {len(df)} records")
-
-        # Run anomaly detection
-        print("[API] Running anomaly detection...")
-        final_df, candidate_df = detect_anomalies(
-            df, proximity_km, duration_min, candidate_duration_min,
-            sog_threshold, port_distance_km, time_gap_min, PORTS
-        )
-
-        confirmed, candidates = format_anomaly_response(final_df, candidate_df)
-
-        return jsonify({
-            "confirmed_anomalies": confirmed,
-            "candidate_anomalies": candidates,
-            "data_points": len(df),
-            "summary": {
-                "confirmed_count": len(confirmed),
-                "candidate_count": len(candidates),
-                "date_range": {
-                    "start": start_date.isoformat(),
-                    "end": end_date.isoformat()
-                }
+        # Create job record
+        job_id = str(uuid.uuid4())
+        with jobs_lock:
+            jobs[job_id] = {
+                "status": "running",
+                "progress": "Starting...",
+                "result": None,
+                "error": None,
+                "created_at": datetime.now().isoformat()
             }
-        }), 200
+
+        # Spawn background thread
+        t = threading.Thread(
+            target=run_detection_job,
+            args=(job_id, start_date, end_date, proximity_km, duration_min,
+                  candidate_duration_min, sog_threshold, port_distance_km,
+                  time_gap_min, mmsi_filter),
+            daemon=True
+        )
+        t.start()
+
+        # Return immediately — Cloudflare sees a fast 202
+        return jsonify({"job_id": job_id, "status": "running"}), 202
 
     except KeyError as e:
         return jsonify({"error": f"Missing required field: {e}"}), 400
     except Exception as e:
-        print(f"[API] Error during detection: {e}")
+        print(f"[API] Error spawning detection job: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+# ==============================
+# NEW: /api/job/<job_id> — polling endpoint
+# ==============================
+
+@app.route('/api/job/<job_id>', methods=['GET'])
+def get_job(job_id):
+    """
+    Poll detection job status.
+    Returns:
+      { "status": "running", "progress": "Analysing 12,400 AIS records..." }
+      { "status": "done",    "result": { ...same payload as old /api/detect... } }
+      { "status": "error",   "error": "..." }
+    """
+    with jobs_lock:
+        job = jobs.get(job_id)
+
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+
+    if job["status"] == "running":
+        return jsonify({
+            "status": "running",
+            "progress": job["progress"]
+        }), 200
+
+    if job["status"] == "done":
+        return jsonify({
+            "status": "done",
+            "result": job["result"]
+        }), 200
+
+    # status == "error"
+    return jsonify({
+        "status": "error",
+        "error": job["error"]
+    }), 200
 
 
 @app.route('/api/vessel/<int:mmsi>', methods=['GET'])

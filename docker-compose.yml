@@ -12,6 +12,7 @@ services:
     build: ./backend
     ports:
       - "5020:5000"   # host 5020 → container 5000
+    command: gunicorn -w 1 --threads 4 -b 0.0.0.0:5000 app:app
     environment:
       MONGODB_URI: mongodb://mongodb:27017/
       DATABASE_NAME: ais_transhipment_db
