@@ -17,7 +17,7 @@ load_dotenv()
 # Configuration
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "ais_transhipment_db")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ais_signals")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ais_signal_test")
 
 # Scenario configurations
 SCENARIOS = {
